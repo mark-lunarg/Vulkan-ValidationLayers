@@ -652,6 +652,8 @@ TEST_F(VkGpuAssistedLayerTest, GpuBufferOOB) {
         char const *expected_error;
     };
     std::vector<TestCase> tests;
+    // "VUID-vkCmdDispatchBase-None-02705" Uniform
+    // "VUID-vkCmdDispatchBase-None-02706" Storage
     tests.push_back({false, 8, "Descriptor size is 16 and highest byte accessed was 35"});
     // Uniform buffer stride rounded up to the alignment of a vec4 (16 bytes)
     // so u_index.index[4] accesses bytes 64, 65, 66, and 67

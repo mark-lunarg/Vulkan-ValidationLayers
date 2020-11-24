@@ -39,21 +39,28 @@ struct GpuAssistedBufferInfo {
     VkDescriptorSet desc_set;
     VkDescriptorPool desc_pool;
     VkPipelineBindPoint pipeline_bind_point;
+    CMD_TYPE cmd_type;
     GpuAssistedBufferInfo(GpuAssistedDeviceMemoryBlock output_mem_block, GpuAssistedDeviceMemoryBlock di_input_mem_block,
                           GpuAssistedDeviceMemoryBlock bda_input_mem_block, VkDescriptorSet desc_set, VkDescriptorPool desc_pool,
-                          VkPipelineBindPoint pipeline_bind_point)
+                          VkPipelineBindPoint pipeline_bind_point, CMD_TYPE cmd_type)
         : output_mem_block(output_mem_block),
           di_input_mem_block(di_input_mem_block),
           bda_input_mem_block(bda_input_mem_block),
           desc_set(desc_set),
           desc_pool(desc_pool),
-          pipeline_bind_point(pipeline_bind_point){};
+          pipeline_bind_point(pipeline_bind_point),
+          cmd_type(cmd_type){};
 };
 
 struct GpuAssistedShaderTracker {
     VkPipeline pipeline;
     VkShaderModule shader_module;
     std::vector<unsigned int> pgm;
+};
+
+struct GpuVuid {
+    const char* uniform_access_oob = kVUIDUndefined;
+    const char* storage_access_oob = kVUIDUndefined;
 };
 
 struct GpuAssistedAccelerationStructureBuildValidationBufferInfo {
@@ -198,10 +205,11 @@ class GpuAssisted : public ValidationStateTracker {
     void PreCallRecordCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
                                          const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule,
                                          void* csm_state_data);
-    void AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQueue queue, VkPipelineBindPoint pipeline_bind_point,
+    void AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQueue queue, GpuAssistedBufferInfo &buffer_info,
                                     uint32_t operation_index, uint32_t* const debug_output_buffer);
     void SetDescriptorInitialized(uint32_t* pData, uint32_t index, const cvdescriptorset::Descriptor* descriptor);
     void UpdateInstrumentationBuffer(CMD_BUFFER_STATE* cb_node);
+    const GpuVuid& GetGpuVuid(CMD_TYPE cmd_type) const;
     void PreCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence);
     void PostCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence,
                                    VkResult result);
@@ -275,7 +283,7 @@ class GpuAssisted : public ValidationStateTracker {
                                                const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
                                                const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable,
                                                VkDeviceAddress indirectDeviceAddress);
-    void AllocateValidationResources(const VkCommandBuffer cmd_buffer, const VkPipelineBindPoint bind_point);
+    void AllocateValidationResources(const VkCommandBuffer cmd_buffer, const VkPipelineBindPoint bind_point, CMD_TYPE cmd);
     void PostCallRecordGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
                                                    VkPhysicalDeviceProperties* pPhysicalDeviceProperties);
     void PostCallRecordGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
