@@ -24,7 +24,7 @@
  * Author: John Zulauf <jzulauf@lunarg.com>
  */
 #include <type_traits>
-  
+
 #include "cast_utils.h"
 #include "layer_validation_tests.h"
 
@@ -2361,4 +2361,246 @@ TEST_F(VkSyncValTest, SyncSubpassMultiDep) {
     m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "SYNC-HAZARD-READ_AFTER_WRITE");
     m_commandBuffer->BeginRenderPass(m_renderPassBeginInfo);
     m_errorMonitor->VerifyFound();
+}
+
+TEST_F(VkSyncValTest, RenderPassAsyncHazard) {
+    ASSERT_NO_FATAL_FAILURE(InitSyncValFramework());
+    ASSERT_NO_FATAL_FAILURE(InitState());
+
+    // overall set up:
+    // subpass 0:
+    //   write image 0
+    // subpass 1:
+    //   read image 0
+    //   write image 1
+    // subpass 2:
+    //   read image 0
+    //   write image 2
+    //
+    // subpasses 1 & 2 can run in parallel but both should depend on 0
+
+    constexpr VkFormat kFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    constexpr uint32_t kWidth = 32, kHeight = 32;
+    constexpr uint32_t kNumImages = 3;
+
+    VkImageCreateInfo src_img_info = {};
+    src_img_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    src_img_info.pNext = NULL;
+    src_img_info.flags = 0;
+    src_img_info.imageType = VK_IMAGE_TYPE_2D;
+    src_img_info.format = kFormat;
+    src_img_info.extent = { kWidth, kHeight, 1};
+    src_img_info.mipLevels = 1;
+    src_img_info.arrayLayers = 1;
+    src_img_info.samples = VK_SAMPLE_COUNT_2_BIT;
+    src_img_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    src_img_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+    src_img_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    src_img_info.queueFamilyIndexCount = 0;
+    src_img_info.pQueueFamilyIndices = nullptr;
+    src_img_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VkImageCreateInfo dst_img_info = {};
+    dst_img_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    dst_img_info.pNext = nullptr;
+    dst_img_info.flags = 0;
+    dst_img_info.imageType = VK_IMAGE_TYPE_2D;
+    dst_img_info.format = kFormat;
+    dst_img_info.extent = { kWidth, kHeight, 1};
+    dst_img_info.mipLevels = 1;
+    dst_img_info.arrayLayers = 1;
+    dst_img_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    dst_img_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    dst_img_info.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    dst_img_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    dst_img_info.queueFamilyIndexCount = 0;
+    dst_img_info.pQueueFamilyIndices = nullptr;
+    dst_img_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    std::vector<std::unique_ptr<VkImageObj>> images;
+    for (uint32_t i = 0; i < kNumImages; i++) {
+        images.emplace_back(new VkImageObj(m_device));
+    }
+    images[0]->Init(src_img_info);
+    for (uint32_t i = 1; i < images.size(); i++) {
+        images[i]->Init(dst_img_info);
+    }
+
+    std::array<VkImageView, kNumImages> attachments {};
+    std::array<VkAttachmentDescription, kNumImages> attachment_descriptions {};
+    std::array<VkAttachmentReference, kNumImages> color_refs {};
+    std::array<VkImageMemoryBarrier, kNumImages> img_barriers {};
+
+    for (uint32_t i = 0; i < attachments.size(); i++) {
+        attachments[i] = images[i]->targetView(kFormat);
+        attachment_descriptions[i] = {};
+        attachment_descriptions[i].flags = 0;
+        attachment_descriptions[i].format = kFormat;
+        attachment_descriptions[i].samples = VK_SAMPLE_COUNT_1_BIT;
+        attachment_descriptions[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachment_descriptions[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachment_descriptions[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        attachment_descriptions[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachment_descriptions[i].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        attachment_descriptions[i].finalLayout = (i == 0) ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        color_refs[i] = {i, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+
+        img_barriers[i].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        img_barriers[i].srcAccessMask = 0;
+        img_barriers[i].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        img_barriers[i].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        img_barriers[i].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        img_barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        img_barriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        img_barriers[i].image = images[i]->handle();
+        img_barriers[i].subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
+    }
+
+    const VkAttachmentReference input_ref {0u, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+    uint32_t preserve_subpass1 = 2;
+    uint32_t preserve_subpass2 = 1;
+
+    std::array<VkSubpassDescription, kNumImages> subpasses {};
+
+    subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpasses[0].inputAttachmentCount = 0;
+    subpasses[0].pInputAttachments = nullptr;
+    subpasses[0].colorAttachmentCount = 1;
+    subpasses[0].pColorAttachments = &color_refs[0];
+
+    subpasses[1].pipelineBindPoint= VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpasses[1].inputAttachmentCount= 1;
+    subpasses[1].pInputAttachments = &input_ref;
+    subpasses[1].colorAttachmentCount = 1;
+    subpasses[1].pColorAttachments = &color_refs[1];
+    subpasses[1].preserveAttachmentCount = 1;
+    subpasses[1].pPreserveAttachments = &preserve_subpass1;
+
+    subpasses[2].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpasses[2].inputAttachmentCount = 1;
+    subpasses[2].pInputAttachments = &input_ref;
+    subpasses[2].colorAttachmentCount = 1;
+    subpasses[2].pColorAttachments = &color_refs[2];
+    subpasses[2].preserveAttachmentCount = 1;
+    subpasses[2].pPreserveAttachments = &preserve_subpass2;
+
+    std::array<VkSubpassDependency, 2> subpass_dependencies = {};
+
+    subpass_dependencies[0].srcSubpass = 0;
+    subpass_dependencies[0].dstSubpass = 1;
+    subpass_dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpass_dependencies[0].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    subpass_dependencies[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    subpass_dependencies[0].dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
+    subpass_dependencies[0].dependencyFlags = 0;
+
+    subpass_dependencies[1].srcSubpass = 0;
+    subpass_dependencies[1].dstSubpass = 2;
+    subpass_dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpass_dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    subpass_dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    subpass_dependencies[1].dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
+    subpass_dependencies[1].dependencyFlags = 0;
+
+    VkRenderPassCreateInfo renderpass_info = {};
+    renderpass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderpass_info.pNext = nullptr;
+    renderpass_info.flags = 0;
+    renderpass_info.attachmentCount = attachment_descriptions.size();
+    renderpass_info.pAttachments = attachment_descriptions.data();
+    renderpass_info.subpassCount = subpasses.size();
+    renderpass_info.pSubpasses = subpasses.data();
+    renderpass_info.dependencyCount = subpass_dependencies.size();
+    renderpass_info.pDependencies = subpass_dependencies.data();
+
+    VkRenderPass rp;
+    ASSERT_VK_SUCCESS(vk::CreateRenderPass(device(), &renderpass_info, nullptr, &rp));
+
+    VkFramebuffer fb;
+    VkFramebufferCreateInfo fbci = {};
+    fbci.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    fbci.pNext = nullptr;
+    fbci.flags = 0;
+    fbci.renderPass = rp;
+    fbci.attachmentCount = attachments.size();
+    fbci.pAttachments = attachments.data();
+    fbci.width = kWidth;
+    fbci.height = kHeight;
+    fbci.layers = 1;
+
+    ASSERT_VK_SUCCESS(vk::CreateFramebuffer(device(), &fbci, nullptr, &fb));
+
+    VkSampler sampler = VK_NULL_HANDLE;
+    VkSamplerCreateInfo sampler_info = SafeSaneSamplerCreateInfo();
+    vk::CreateSampler(m_device->device(), &sampler_info, NULL, &sampler);
+
+    char const *fsSource =
+        "#version 450\n"
+        "layout(input_attachment_index=0, set=0, binding=0) uniform subpassInput x;\n"
+        "void main() {\n"
+        "   vec4 color = subpassLoad(x);\n"
+        "}\n";
+
+    VkShaderObj vs(m_device, bindStateVertShaderText, VK_SHADER_STAGE_VERTEX_BIT, this);
+    VkShaderObj fs(m_device, fsSource, VK_SHADER_STAGE_FRAGMENT_BIT, this);
+
+    CreatePipelineHelper g_pipe_0(*this);
+    g_pipe_0.InitInfo();
+    g_pipe_0.gp_ci_.renderPass = rp;
+    g_pipe_0.InitState();
+    ASSERT_VK_SUCCESS(g_pipe_0.CreateGraphicsPipeline());
+
+    CreatePipelineHelper g_pipe_12(*this);
+    g_pipe_12.InitInfo();
+    g_pipe_12.shader_stages_ = {vs.GetStageCreateInfo(), fs.GetStageCreateInfo()};
+    g_pipe_12.dsl_bindings_ = {{0, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
+    g_pipe_12.gp_ci_.renderPass = rp;
+    g_pipe_12.InitState();
+    ASSERT_VK_SUCCESS(g_pipe_12.CreateGraphicsPipeline());
+
+    g_pipe_12.descriptor_set_->WriteDescriptorImageInfo(0, attachments[0], sampler, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT);
+    g_pipe_12.descriptor_set_->UpdateDescriptorSets();
+
+    m_commandBuffer->begin();
+    VkClearValue clear = {};
+    clear.color = m_clear_color;
+    std::array<VkClearValue, 3> clear_values = {{clear, clear, clear}};
+
+    m_errorMonitor->ExpectSuccess();
+    m_commandBuffer->begin();
+
+    vk::CmdPipelineBarrier(m_commandBuffer->handle(),  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+                           0, nullptr, 0, nullptr, img_barriers.size(), img_barriers.data());
+
+    m_renderPassBeginInfo.renderArea = {{0, 0}, {16, 16}};
+    m_renderPassBeginInfo.pClearValues = clear_values.data();
+    m_renderPassBeginInfo.clearValueCount = clear_values.size();
+
+    m_renderPassBeginInfo.renderArea = {{0, 0}, {kWidth, kHeight}};
+    m_renderPassBeginInfo.renderPass = rp;
+    m_renderPassBeginInfo.framebuffer = fb;
+
+    vk::CmdBeginRenderPass(m_commandBuffer->handle(), &m_renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vk::CmdBindPipeline(m_commandBuffer->handle(), VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipe_0.pipeline_);
+    vk::CmdBindDescriptorSets(m_commandBuffer->handle(), VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipe_0.pipeline_layout_.handle(), 0, 1,
+                              &g_pipe_0.descriptor_set_->set_, 0, NULL);
+
+    vk::CmdDraw(m_commandBuffer->handle(), 3, 1, 0, 0);
+    vk::CmdNextSubpass(m_commandBuffer->handle(), VK_SUBPASS_CONTENTS_INLINE);
+
+    vk::CmdBindPipeline(m_commandBuffer->handle(), VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipe_12.pipeline_);
+    vk::CmdBindDescriptorSets(m_commandBuffer->handle(), VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipe_12.pipeline_layout_.handle(), 0, 1,
+                              &g_pipe_12.descriptor_set_->set_, 0, NULL);
+    vk::CmdDraw(m_commandBuffer->handle(), 3, 1, 0, 0);
+
+    vk::CmdNextSubpass(m_commandBuffer->handle(), VK_SUBPASS_CONTENTS_INLINE);
+    vk::CmdDraw(m_commandBuffer->handle(), 3, 1, 0, 0);
+
+    vk::CmdEndRenderPass(m_commandBuffer->handle());
+
+    m_commandBuffer->end();
+
+    m_errorMonitor->VerifyNotFound();
 }
