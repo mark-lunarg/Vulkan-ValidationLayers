@@ -36,7 +36,7 @@ DEFAULT_CONFIGURATION = CONFIGURATIONS[0]
 
 #
 # Check if the system is Windows
-def is_windows():
+def IsWindows():
     return 'windows' == platform.system().lower()
 
 #
@@ -61,7 +61,11 @@ def BuildVVL(args):
     common_ci.RunShellCmd(cmake_ver_cmd)
 
     print("Run update_deps.py for VVL Repository")
-    update_cmd = 'python3 scripts/update_deps.py --dir %s --config %s --arch x64' % (EXTERNAL_DIR_NAME, args.configuration)
+
+    PYTHON_EXE = 'python3'
+    if IsWindows():
+        PYTHON_EXE = 'python'
+    update_cmd = '%s scripts/update_deps.py --dir %s --config %s --arch x64' % (PYTHON_EXE, EXTERNAL_DIR_NAME, args.configuration)
     common_ci.RunShellCmd(update_cmd)
 
     GTEST_DIR = common_ci.repo_relative("external/googletest")
@@ -76,13 +80,20 @@ def BuildVVL(args):
 
     CreateBuildDirectory(VVL_BUILD_DIR)
     print("Run CMake for Validation Layers")
-    cmake_cmd = 'cmake -C ../%s/helper.cmake -DCMAKE_BUILD_TYPE=%s -DUSE_CCACHE=ON ..' \
-        % (EXTERNAL_DIR_NAME, args.configuration.capitalize())
+    if IsWindows():
+        cmake_cmd = 'cmake -A x64 -C ../%s/helper.cmake ..' % EXTERNAL_DIR_NAME
+    else:
+        cmake_cmd = 'cmake -C ../%s/helper.cmake -DCMAKE_BUILD_TYPE=%s -DUSE_CCACHE=ON ..' \
+            % (EXTERNAL_DIR_NAME, args.configuration.capitalize())
+
     common_ci.RunShellCmd(cmake_cmd, VVL_BUILD_DIR)
 
     print("Build Validation Layers and Tests")
     os.chdir(VVL_BUILD_DIR)
-    build_cmd = 'cmake --build . -- -j%s' % os.cpu_count()
+    if IsWindows():
+        build_cmd = 'cmake --build . --config %s' % args.configuration.capitalize()
+    else:
+        build_cmd = 'cmake --build . -- -j%s' % os.cpu_count()
     common_ci.RunShellCmd(build_cmd, VVL_BUILD_DIR)
 
 #
@@ -184,10 +195,11 @@ def main():
     ret_code = 0
     try:
         BuildVVL(args)
-        ret_code = CheckVVLCodegenConsistency()
-        BuildLoader(args)
-        BuildMockICD(args)
-        RunVVLTests(args)
+        if not IsWindows():
+            ret_code = CheckVVLCodegenConsistency()
+            BuildLoader(args)
+            BuildMockICD(args)
+            RunVVLTests(args)
 
     except subprocess.CalledProcessError as proc_error:
         print('Command "%s" failed with return code %s' % (' '.join(proc_error.cmd), proc_error.returncode))
