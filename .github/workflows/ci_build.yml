@@ -111,15 +111,15 @@ jobs:
       matrix:
         config:
         - {
-            name: "Windows MSVC 2017 Release",
+            name: "Windows MSVC 2017 Debug",
             os: vs2017-win2016,
-            type: "release",
+            type: "debug",
             cc: "cl", cxx: "cl"
           }
         - {
-            name: "Windows MSVC 2019 Debug",
+            name: "Windows MSVC 2019 Release",
             os: windows-latest,
-            type: "debug",
+            type: "release",
             cc: "cl", cxx: "cl"
           }
     steps:
