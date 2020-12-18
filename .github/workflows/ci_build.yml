@@ -26,8 +26,20 @@ on:
       - master
 
 jobs:
+  pre_job:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.output.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@master
+        with:
+          concurrent_skipping: 'same_content'
+
   code-format:
     name: ${{ matrix.config.name }}
+    needs: pre_job
+    if: ${{ needs.pre_job.output.should_skip != 'true' }}
     runs-on: ${{ matrix.config.os }}
     strategy:
       fail-fast: false
@@ -51,6 +63,8 @@ jobs:
 
   linux:
     name: ${{ matrix.config.name }}
+    needs: pre_job
+    if: ${{ needs.pre_job.output.should_skip != 'true' }}
     runs-on: ${{ matrix.config.os }}
     strategy:
       fail-fast: false
@@ -89,6 +103,8 @@ jobs:
 
   windows:
     name: ${{ matrix.config.name }}
+    needs: pre_job
+    if: ${{ needs.pre_job.output.should_skip != 'true' }}
     runs-on: ${{ matrix.config.os }}
     strategy:
       fail-fast: false
@@ -123,6 +139,8 @@ jobs:
 
   gn:
     name: ${{ matrix.config.name }}
+    needs: pre_job
+    if: ${{ needs.pre_job.output.should_skip != 'true' }}
     runs-on: ${{ matrix.config.os }}
     strategy:
       fail-fast: false
@@ -152,6 +170,8 @@ jobs:
 
   android:
     name: ${{ matrix.config.name }}
+    needs: pre_job
+    if: ${{ needs.pre_job.output.should_skip != 'true' }}
     runs-on: ${{ matrix.config.os }}
     strategy:
       fail-fast: false
