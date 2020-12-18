@@ -262,7 +262,7 @@ CONFIG_MAP = {
     'minsizerel': 'MinSizeRel'
 }
 
-VERBOSE = False
+VERBOSE = True
 
 DEVNULL = open(os.devnull, 'wb')
 

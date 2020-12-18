@@ -65,7 +65,14 @@ def BuildVVL(args):
     PYTHON_EXE = 'python3'
     if IsWindows():
         PYTHON_EXE = 'python'
-    update_cmd = '%s scripts/update_deps.py --dir %s --config %s --arch x64' % (PYTHON_EXE, EXTERNAL_DIR_NAME, args.configuration)
+
+    if IsWindows():
+        if args.configuration == 'release':
+            update_cmd = '%s scripts/update_deps.py --dir %s --config %s --generator "Visual Studio 16 2019"' % (PYTHON_EXE, EXTERNAL_DIR_NAME, args.configuration)
+        else:
+            update_cmd = '%s scripts/update_deps.py --dir %s --config %s' % (PYTHON_EXE, EXTERNAL_DIR_NAME, args.configuration)
+    else:
+        update_cmd = '%s scripts/update_deps.py --dir %s --config %s --arch x64' % (PYTHON_EXE, EXTERNAL_DIR_NAME, args.configuration)
     common_ci.RunShellCmd(update_cmd)
 
     GTEST_DIR = common_ci.repo_relative("external/googletest")
