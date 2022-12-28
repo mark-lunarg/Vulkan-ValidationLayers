@@ -9268,6 +9268,45 @@ bool StatelessValidation::manual_PreCallValidateGetPhysicalDeviceSurfaceCapabili
         }
     }
 #endif
+
+    if (IsExtEnabled(device_extensions.vk_ext_surface_maintenance1)) {
+            const auto *surface_present_mode_compatibility =
+            LvlFindInChain<VkSurfacePresentModeCompatibilityEXT>(pSurfaceCapabilities->pNext);
+        const auto *surface_present_scaling_compatibilities =
+            LvlFindInChain<VkSurfacePresentScalingCapabilitiesEXT>(pSurfaceCapabilities->pNext);
+
+        if (surface_present_mode_compatibility && !(LvlFindInChain<VkSurfacePresentModeEXT>(pSurfaceInfo->pNext))) {
+            skip |= LogError(device, "VUID-vkGetPhysicalDeviceSurfaceCapabilities2KHR-pNext-07776",
+                             "vkGetPhysicalDeviceSurfaceCapabilities2KHR(): VK_EXT_surface_maintenance1 is enabled and "
+                             "pSurfaceCapabilities->pNext contains "
+                             "VkSurfacePresentModeCompatibilityEXT, but pSurfaceInfo->pNext does not contain a "
+                             "VkSurfacePresentModeEXT structure.");
+        }
+
+        if (surface_present_scaling_compatibilities && !(LvlFindInChain<VkSurfacePresentModeEXT>(pSurfaceInfo->pNext))) {
+            skip |= LogError(device, "VUID-vkGetPhysicalDeviceSurfaceCapabilities2KHR-pNext-07777",
+                             "vkGetPhysicalDeviceSurfaceCapabilities2KHR(): VK_EXT_surface_maintenance1 is enabled and "
+                             "pSurfaceCapabilities->pNext contains "
+                             "VkSurfacePresentScalingCapabilitiesEXT, but pSurfaceInfo->pNext does not contain a "
+                             "VkSurfacePresentModeEXT structure.");
+        }
+
+        if (IsExtEnabled(instance_extensions.vk_google_surfaceless_query)) {
+            if (surface_present_mode_compatibility && (pSurfaceInfo->surface == VK_NULL_HANDLE)) {
+                skip |= LogError(physicalDevice, "VUID-vkGetPhysicalDeviceSurfaceCapabilities2KHR-pNext-07778",
+                                 "vkGetPhysicalDeviceSurfaceCapabilities2KHR: VK_EXT_surface_maintenance1 and "
+                                 "VK_GOOGLE_surfaceless_query are enabled and pSurfaceCapabilities->pNext contains a "
+                                 "VkSurfacePresentModeCompatibilityEXT structure, but pSurfaceInfo->surface is VK_NULL_HANDLE.");
+            }
+
+            if (surface_present_scaling_compatibilities && (pSurfaceInfo->surface == VK_NULL_HANDLE)) {
+                skip |= LogError(physicalDevice, "VUID-vkGetPhysicalDeviceSurfaceCapabilities2KHR-pNext-07779",
+                                 "vkGetPhysicalDeviceSurfaceCapabilities2KHR: VK_EXT_surface_maintenance1 and "
+                                 "VK_GOOGLE_surfaceless_query are enabled and pSurfaceCapabilities->pNext contains a "
+                                 "VkSurfacePresentScalingCapabilitiesEXT structure, but pSurfaceInfo->surface is VK_NULL_HANDLE.");
+            }
+        }
+    }
     return skip;
 }
 
