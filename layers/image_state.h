@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2022 The Khronos Group Inc.
- * Copyright (c) 2015-2022 Valve Corporation
- * Copyright (c) 2015-2022 LunarG, Inc.
+/* Copyright (c) 2015-2023 The Khronos Group Inc.
+ * Copyright (c) 2015-2023 Valve Corporation
+ * Copyright (c) 2015-2023 LunarG, Inc.
  * Copyright (C) 2015-2022 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
@@ -400,8 +400,6 @@ class SURFACE_STATE : public BASE_NODE {
     mutable layer_data::unordered_map<GpuQueue, bool> gpu_queue_support_;
     mutable layer_data::unordered_map<VkPhysicalDevice, std::vector<VkSurfaceFormatKHR>> formats_;
     mutable layer_data::unordered_map<VkPhysicalDevice, VkSurfaceCapabilitiesKHR> capabilities_;
-    mutable layer_data::unordered_map<VkPhysicalDevice, std::vector<VkPresentModeKHR>> present_modes_;
     mutable layer_data::unordered_map<VkPhysicalDevice,
-        layer_data::unordered_map<VkPresentModeKHR, std::shared_ptr<PresentModeState>>> maint1_present_modes_;
-
+        layer_data::unordered_map<VkPresentModeKHR, std::optional<std::shared_ptr<PresentModeState>>>> present_modes_data_;
 };
