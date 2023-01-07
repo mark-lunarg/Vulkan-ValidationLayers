@@ -793,8 +793,11 @@ std::vector<VkPresentModeKHR> SURFACE_STATE::GetCompatibleModes(VkPhysicalDevice
     assert(phys_dev);
     auto iter = present_modes_data_.find(phys_dev);
     if ((iter != present_modes_data_.end()) && (iter->second.find(present_mode) != iter->second.end())) {
-        if (((iter->second)[present_mode]).has_value() && (iter->second)[present_mode].value()->compatible_present_modes_.size() != 0) {
-            return (iter->second)[present_mode].value()->compatible_present_modes_;
+        if (((iter->second)[present_mode]).has_value()) {
+            auto &compatible_modes = *(iter->second)[present_mode];
+            if (compatible_modes->compatible_present_modes_.size() != 0) {
+                return compatible_modes->compatible_present_modes_;
+            }
         }
     }
 
@@ -824,8 +827,10 @@ void SURFACE_STATE::SetPresentModeCapabilities(VkPhysicalDevice phys_dev, const 
     if (!present_modes_data_[phys_dev][present_mode].has_value()) {
         present_modes_data_[phys_dev][present_mode] = std::make_shared<PresentModeState>();
     }
-    present_modes_data_[phys_dev][present_mode].value()->scaling_capabilities_ = scaling_caps;
-    present_modes_data_[phys_dev][present_mode].value()->surface_capabilities_ = caps;
+    // Old MacOS doesn't support Value()
+    auto &present_mode_state = *(present_modes_data_[phys_dev][present_mode]);
+    present_mode_state->scaling_capabilities_ = scaling_caps;
+    present_mode_state->surface_capabilities_ = caps;
 }
 
 // Get the surface caps this particular present mode
@@ -834,7 +839,8 @@ VkSurfaceCapabilitiesKHR SURFACE_STATE::GetPresentModeSurfaceCapabilities(VkPhys
     auto iter = present_modes_data_.find(phys_dev);
     if ((iter != present_modes_data_.end()) && (iter->second.find(present_mode) != iter->second.end())) {
         if ((iter->second)[present_mode].has_value()) {
-            return (iter->second)[present_mode].value()->surface_capabilities_;
+            auto &surface_caps = *((iter->second)[present_mode]);
+            return surface_caps->surface_capabilities_;
         }
     }
 
@@ -855,7 +861,8 @@ VkSurfacePresentScalingCapabilitiesEXT SURFACE_STATE::GetPresentModeScalingCapab
     auto iter = present_modes_data_.find(phys_dev);
     if ((iter != present_modes_data_.end()) && (iter->second.find(present_mode) != iter->second.end())) {
         if ((iter->second)[present_mode].has_value()) {
-            return (iter->second)[present_mode].value()->scaling_capabilities_;
+            auto &scaling_caps = *((iter->second)[present_mode]);
+            return scaling_caps->scaling_capabilities_;
         }
     }
 
